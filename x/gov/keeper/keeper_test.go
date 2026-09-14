@@ -134,7 +134,7 @@ func TestProposalQueues(t *testing.T) {
 }
 
 func TestSetHooks(t *testing.T) {
-	govKeeper, _, _, _, _, _, _, _ := setupGovKeeper(t) //nolint:dogsled
+	govKeeper, _, _, _, _, _, _, _ := setupGovKeeper(t) //nolint:dogsled // The hook test only needs the keeper from the shared fixture.
 	require.Empty(t, govKeeper.Hooks())
 
 	govHooksReceiver := MockGovHooksReceiver{}

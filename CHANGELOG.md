@@ -38,6 +38,13 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 ## UNRELEASED
 
+### Bug Fixes
+
+* (crypto) xitcoin-org/pos-chain#33 Use ProtonMail armor while preserving historical key formats.
+* (build) xitcoin-org/pos-chain#33 Invoke the Bash dependency tidy script with Bash.
+
+## UNRELEASED
+
 ### DEPENDENCIES
 
 ### BUG FIXES

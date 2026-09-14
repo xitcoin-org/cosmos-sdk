@@ -1,16 +1,19 @@
+// Xitcoin modification (2026-09-13); see XITCOIN-PROVENANCE.md.
 package crypto
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/cometbft/cometbft/crypto"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/openpgp/armor" //nolint:staticcheck //TODO: remove this dependency
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -277,13 +280,48 @@ func EncodeArmor(blockType string, headers map[string]string, data []byte) strin
 
 func DecodeArmor(armorStr string) (blockType string, headers map[string]string, data []byte, err error) {
 	buf := bytes.NewBufferString(armorStr)
-	block, err := armor.Decode(buf)
+	// Pass a sufficiently sized reader so Decode reuses it. This records the
+	// selected body after skipped preambles, without reparsing armor headers.
+	reader := bufio.NewReaderSize(buf, 100)
+	block, err := armor.Decode(reader)
 	if err != nil {
 		return "", nil, nil, err
 	}
+	bodyStart := len(armorStr) - buf.Len() - reader.Buffered()
 	data, err = io.ReadAll(block.Body)
 	if err != nil {
 		return "", nil, nil, err
 	}
+	if err := validateArmorChecksum(armorStr[bodyStart:], block.Type, data); err != nil {
+		return "", nil, nil, err
+	}
 	return block.Type, block.Header, data, nil
+}
+
+// validateArmorChecksum preserves Tendermint's historical CRC24 corruption
+// check. The maintained OpenPGP reader intentionally ignores this footer under
+// RFC 9580, but existing keyring files and callers still rely on its validation.
+// CRC24 detects accidental corruption; it is not cryptographic authentication.
+func validateArmorChecksum(body, blockType string, data []byte) error {
+	lines := strings.Split(body, "\n")
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "-----END ") {
+			return nil // Historically, a missing CRC24 footer was accepted.
+		}
+		if len(line) != 5 || line[0] != '=' {
+			continue
+		}
+		if i+1 >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[i+1]), "-----END ") {
+			return armor.ArmorCorrupt
+		}
+		// Use the maintained encoder's CRC24 implementation, not a second one.
+		encoded := EncodeArmor(blockType, nil, data)
+		footer := strings.LastIndex(encoded, "\n=")
+		if footer < 0 || line != encoded[footer+1:footer+6] {
+			return armor.ArmorCorrupt
+		}
+		return nil
+	}
+	return nil
 }
